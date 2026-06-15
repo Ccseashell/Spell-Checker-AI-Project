@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KOREKARIYAN</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="app-wrapper">
+        <div class="topbar">
+          <h1 class="logo">
+            <span class="kore">KORE</span><span class="kariyan">KARIYAN</span>
+          </h1>
+        </div>
+
+        <section class="hero">
+          <p class="hero-tagline">For Every Taglish Error, May Koreksyon</p>
+          <p class="hero-desc">
+            KOREKARIYAN is an automated spelling checker, specifically for
+            code-switched Tagalog-English (Taglish) texts. Type or paste your
+            text here to check for spelling and contextual errors.
+          </p>
+        </section>
+
+        <section class="content-area">
+          <div class="grid">
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-title">Original Text</div>
+                <div class="panel-actions">
+                  <button id="copy-btn" class="btn btn-copy" type="button">
+                    Copy
+                  </button>
+                  <button id="delete-btn" class="btn btn-delete" type="button">
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              <div class="editor-wrap">
+                <textarea
+                  id="input-text"
+                  class="editor"
+                  placeholder="Add your Taglish text here!"
+                ></textarea>
+              </div>
+
+              <div class="panel-foot">
+                <div class="meta">
+                  <span>Words: <strong id="word-count">0</strong>/500</span>
+                  <span>Characters: <strong id="char-count">0</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-title">Suggestions</div>
+                <div class="sugg-head-right">
+                  <span class="badge" id="sugg-count">0</span>
+                </div>
+              </div>
+
+              <div class="sugg-body" id="sugg-body">
+                <div class="suggestions-box" id="suggestions-box">
+                  <div class="suggestions-top">
+                    <span>Suggestions show → <strong>up here!</strong></span>
+                    <span class="chevron">^</span>
+                  </div>
+
+                  <div class="suggestions-list" id="suggestions-list">
+                    <p class="suggestions-label">Other Suggestions:</p>
+                    <div class="suggestion-item">Top 2 Suggestion</div>
+                    <div class="suggestion-item">Top 3 Suggestion</div>
+                    <div class="suggestion-item">Top 4 Suggestion</div>
+                    <div class="suggestion-item">Top 5 Suggestion</div>
+                  </div>
+
+                  <div class="empty-state" id="empty-state">
+                    Type something to see suggestions here.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="toast" id="toast-message">Action completed.</div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
