@@ -8,15 +8,11 @@ const checkBtn = document.getElementById("check-btn");
 const toastMessage = document.getElementById("toast-message");
 const suggestionsList = document.getElementById("suggestions-list");
 const emptyState = document.getElementById("empty-state");
-const resultPopup = document.getElementById("result-popup");
-const resultPopupMessage = document.getElementById("result-popup-message");
-const resultPopupClose = document.getElementById("result-popup-close");
 
 let toastTimer = null;
 let liveCheckTimer = null;
 let activeCheckId = 0;
 let lastCheckedText = "";
-let popupAutoCloseTimer = null;
 
 function showToast(message) {
   toastMessage.textContent = message;
@@ -25,22 +21,6 @@ function showToast(message) {
   toastTimer = setTimeout(() => {
     toastMessage.classList.remove("show");
   }, 1800);
-}
-
-function showResultPopup(message) {
-  resultPopupMessage.textContent = message;
-  resultPopup.classList.add("show");
-  resultPopup.setAttribute("aria-hidden", "false");
-  clearTimeout(popupAutoCloseTimer);
-  popupAutoCloseTimer = setTimeout(() => {
-    hideResultPopup();
-  }, 2200);
-}
-
-function hideResultPopup() {
-  clearTimeout(popupAutoCloseTimer);
-  resultPopup.classList.remove("show");
-  resultPopup.setAttribute("aria-hidden", "true");
 }
 
 function countWords(text) {
@@ -135,12 +115,6 @@ async function checkText(options = {}) {
     suggCount.textContent = String(data.error_count || 0);
     lastCheckedText = text;
 
-    if (data.error_count === 0) {
-      showResultPopup("No errors found in the text.");
-    } else {
-      hideResultPopup();
-    }
-
     if (!silent && source === "manual") {
       showToast(data.error_count ? "Errors detected." : "No errors detected.");
     }
@@ -168,7 +142,6 @@ function scheduleLiveCheck() {
 
 inputText.addEventListener("input", function () {
   updateCounters();
-  hideResultPopup();
   scheduleLiveCheck();
 });
 
@@ -180,7 +153,6 @@ deleteBtn.addEventListener("click", function () {
   suggestionsList.innerHTML = "";
   suggestionsList.style.display = "none";
   emptyState.style.display = "block";
-  hideResultPopup();
   inputText.focus();
   showToast("Text cleared.");
 });
@@ -202,14 +174,6 @@ copyBtn.addEventListener("click", async function () {
 
 checkBtn.addEventListener("click", checkText);
 
-resultPopupClose.addEventListener("click", hideResultPopup);
-resultPopup.addEventListener("click", function (event) {
-  if (event.target === resultPopup) {
-    hideResultPopup();
-  }
-});
-
 suggestionsList.style.display = "none";
 emptyState.style.display = "block";
-hideResultPopup();
 updateCounters();
