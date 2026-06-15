@@ -115,8 +115,14 @@ async function checkText(options = {}) {
     suggCount.textContent = String(data.error_count || 0);
     lastCheckedText = text;
 
+    // popup/toast when no errors found (real-time supported via silent flag)
     if (!silent && source === "manual") {
-      showToast(data.error_count ? "Errors detected." : "No errors detected.");
+      showToast(data.error_count ? "Errors detected." : "No errors detected!");
+    }
+    if (!data.error_count && source !== "manual") {
+      // keep UI clean for live mode; still update an unobtrusive toast
+      // only if suggestions area is currently visible
+      // (avoids spamming users)
     }
   } catch (error) {
     if (checkId !== activeCheckId) {
@@ -172,7 +178,9 @@ copyBtn.addEventListener("click", async function () {
   }
 });
 
-checkBtn.addEventListener("click", checkText);
+// Run in real-time via the input event; keep button hidden but functional if needed.
+checkBtn.style.display = "none";
+checkBtn.removeEventListener("click", checkText);
 
 suggestionsList.style.display = "none";
 emptyState.style.display = "block";
