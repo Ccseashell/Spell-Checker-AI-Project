@@ -36,6 +36,9 @@
                   <button id="delete-btn" class="btn btn-delete" type="button">
                     Delete
                   </button>
+                  <button id="check-btn" class="btn btn-copy check-btn" type="button">
+                    Check Text
+                  </button>
                 </div>
               </div>
 
@@ -44,6 +47,10 @@
                   id="input-text"
                   class="editor"
                   placeholder="Add your Taglish text here!"
+                  spellcheck="false"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
                 ></textarea>
               </div>
 
@@ -57,7 +64,7 @@
 
             <div class="panel">
               <div class="panel-head">
-                <div class="panel-title">Suggestions</div>
+                <div class="panel-title">Detected Errors</div>
                 <div class="sugg-head-right">
                   <span class="badge" id="sugg-count">0</span>
                 </div>
@@ -66,12 +73,15 @@
               <div class="sugg-body" id="sugg-body">
                 <div class="suggestions-box" id="suggestions-box">
                   <div class="suggestions-top">
-                    <span>Suggestions show → <strong>up here!</strong></span>
+                    <span>Suggestions</span>
                     <span class="chevron">^</span>
                   </div>
 
                   <div class="suggestions-list" id="suggestions-list">
-                    <p class="suggestions-label">Other Suggestions:</p>
+                    <div class="suggestion-item">Top 2 Suggestion</div>
+                    <div class="suggestion-item">Top 3 Suggestion</div>
+                    <div class="suggestion-item">Top 4 Suggestion</div>
+                    <div class="suggestion-item">Top 5 Suggestion</div>
                   </div>
 
                   <div class="empty-state" id="empty-state">
