@@ -1,16 +1,3 @@
-"""A small Python implementation of the architecture shown in the diagram.
-
-The pipeline is organized into four main stages:
-- input text -> tokenization -> words
-- modeling module
-- error detection module
-- user correction module
-
-The implementation is intentionally lightweight but functional. It can be used
-as a starting point for expanding language resources, stemming rules, and
-candidate ranking.
-"""
-
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -28,9 +15,18 @@ from urllib.request import urlopen
 
 
 WORD_RE = re.compile(r"[A-Za-z0-9']+(?:-[A-Za-z0-9']+)*")
-TAGALOG_LINE_RE = re.compile(r"^T:\s*(.+)$")
 ENGLISH_WORDS_URL = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt"
-TAGALOG_SOURCE_URL = "https://raw.githubusercontent.com/jhellingman/phildict/master/Data/Calderon/EST-content-1.0.txt"
+TAGALOG_DICTIONARY_SCRAPER_REPO = "https://github.com/raymelon/tagalog-dictionary-scraper.git"
+# Try common raw artifact locations from the repo. If none work (e.g., network restricted),
+# we fall back to the cached data_cache/tagalog_words.txt.
+TAGALOG_DICTIONARY_RAW_CANDIDATES = (
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/data/tagalog_words.txt",
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/data/words.txt",
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/words/tagalog_words.txt",
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/words/words.txt",
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/tagalog_words.txt",
+	"https://raw.githubusercontent.com/raymelon/tagalog-dictionary-scraper/master/words.txt",
+)
 CACHE_DIR = Path(__file__).resolve().parent / "data_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 ENGLISH_CACHE_PATH = CACHE_DIR / "english_words.txt"
@@ -257,10 +253,30 @@ def load_english_words() -> Set[str]:
 
 def load_tagalog_words() -> Set[str]:
 	cached_text = read_cached_text(TAGALOG_CACHE_PATH)
+
+	def try_fetch_raw() -> str:
+		last_err: Exception | None = None
+		for url in TAGALOG_DICTIONARY_RAW_CANDIDATES:
+			try:
+				return fetch_remote_text(url)
+			except (URLError, TimeoutError, OSError, ValueError) as e:
+				last_err = e
+				continue
+			
+		if last_err is not None:
+			# Keep error swallowed; caller will use cached fallback.
+			pass
+		return ""
+
+	text = ""
 	try:
-		text = fetch_remote_text(TAGALOG_SOURCE_URL)
-		write_cached_text(TAGALOG_CACHE_PATH, text)
-	except (URLError, TimeoutError, OSError):
+		text = try_fetch_raw()
+		if text:
+			write_cached_text(TAGALOG_CACHE_PATH, text)
+	except Exception:
+		text = ""
+
+	if not text:
 		if cached_text:
 			text = cached_text
 		else:
@@ -280,16 +296,10 @@ def load_tagalog_words() -> Set[str]:
 				"tama",
 			}
 
-	words: Set[str] = set()
-	for line in text.splitlines():
-		match = TAGALOG_LINE_RE.match(line)
-		if not match:
-			continue
-		entry = unescape(match.group(1)).lower()
-		for token in WORD_RE.findall(entry):
-			if len(token) > 1 or token.isalpha():
-				words.add(token)
-	return words
+	# The scraper outputs a plain list or dictionary export; extract tokens directly.
+	# We reuse WORD_RE to keep consistency with the rest of the pipeline.
+	return extract_word_set(text)
+
 
 
 @dataclass
@@ -303,6 +313,7 @@ class ModelingModule:
 	stemmed_english_automaton: DeterministicAutomaton = field(default_factory=DeterministicAutomaton)
 	stemmed_tagalog_automaton: DeterministicAutomaton = field(default_factory=DeterministicAutomaton)
 	tagalog_prefixes: Tuple[str, ...] = (
+
 		"mag",
 		"nag",
 		"pag",
@@ -434,10 +445,16 @@ class DetectedError:
 class ErrorDetectionModule:
 	modeling: ModelingModule
 	ngram_size: int = 3
+	# Performance guards: prevents worst-case latency on very long inputs.
+	max_errors: int = 60
+	max_candidates_per_token: int = 40
 
 	def detect(self, tokens: Sequence[str]) -> List[DetectedError]:
 		errors: List[DetectedError] = []
 		for index, token in enumerate(tokens):
+			if len(errors) >= self.max_errors:
+				break
+
 			previous_token = tokens[index - 1] if index > 0 else ""
 			next_token = tokens[index + 1] if index + 1 < len(tokens) else ""
 			if self._is_valid_token(token, tokens, index):
@@ -455,6 +472,7 @@ class ErrorDetectionModule:
 				)
 			)
 		return errors
+
 
 	def _is_valid_token(self, token: str, tokens: Sequence[str], index: int) -> bool:
 		lower_token = token.lower()
@@ -500,32 +518,77 @@ class ErrorDetectionModule:
 		return "dictionary, code-switching, or n-gram mismatch"
 
 	def _rank_candidates(self, token: str, limit: int = 5) -> List[str]:
+		# Per-token caching to avoid recomputing expensive features repeatedly.
+		token_lower = token.lower()
+		phonetic_token = filipino_phonetic_code(token_lower)
+		stemmed_token = simple_stem(token_lower)
+
 		candidates = self.modeling.candidate_pool(token)
+		if len(candidates) > self.max_candidates_per_token:
+			# Keep enough candidates for quality, but avoid worst-case explosions.
+			candidates = candidates[: self.max_candidates_per_token]
+
 		language_hint = self.modeling.guess_language(token)
 		preferred_words = self.modeling.tagalog_word_list if language_hint == "tagalog" else self.modeling.english_word_list
 		secondary_words = self.modeling.english_word_list if language_hint == "tagalog" else self.modeling.tagalog_word_list
+
 		scored: List[Tuple[int, float, float, str]] = []
-		phonetic_token = filipino_phonetic_code(token)
+		candidate_phonetic_cache: Dict[str, str] = {}
+
+		# Cheap pre-filters first, only then run Levenshtein/SequenceMatcher.
 		for candidate in candidates:
 			candidate_lower = candidate.lower()
 			if candidate_lower not in preferred_words and candidate_lower not in secondary_words:
 				continue
+
+			# Fast length guard: if too different, skip without any similarity work.
+			if abs(len(candidate_lower) - len(token_lower)) > 2:
+				continue
+
+			# Use simple stem match as a cheap heuristic.
+			if simple_stem(candidate_lower) != stemmed_token:
+				# Still allow it, but only if it's in preferred words.
+				if candidate_lower not in preferred_words:
+					continue
+
+			# Limit number of non-preferred candidates we score.
 			if candidate_lower not in preferred_words and len(scored) >= limit:
 				continue
-			distance = levenshtein_distance(token.lower(), candidate_lower)
+
+			distance = levenshtein_distance(token_lower, candidate_lower)
 			if distance > 2:
 				continue
-			phonetic_similarity = dice_coefficient(phonetic_token, filipino_phonetic_code(candidate_lower))
-			sound_similarity = SequenceMatcher(None, token.lower(), candidate_lower).ratio()
+
+			# Cache phonetic code per candidate.
+			phonetic_candidate = candidate_phonetic_cache.get(candidate_lower)
+			if phonetic_candidate is None:
+				phonetic_candidate = filipino_phonetic_code(candidate_lower)
+				candidate_phonetic_cache[candidate_lower] = phonetic_candidate
+
+			phonetic_similarity = dice_coefficient(phonetic_token, phonetic_candidate)
+			# Only now run the more expensive SequenceMatcher.
+			sound_similarity = SequenceMatcher(None, token_lower, candidate_lower).ratio()
+
 			source_penalty = 0 if candidate_lower in preferred_words else 1
 			score = (source_penalty, distance, -phonetic_similarity, -sound_similarity, candidate_lower)
 			scored.append(score)
+
 		scored.sort()
 		selected = [candidate for _, _, _, _, candidate in scored[:limit]]
-		if not selected:
-			fallback = [word for word in preferred_words if levenshtein_distance(token.lower(), word) <= 2]
-			return fallback[:limit]
-		return selected
+		if selected:
+			return selected
+
+		# Fallback: fewer candidates, still cheap.
+		fallback: List[str] = []
+		for word in preferred_words:
+			if abs(len(word) - len(token_lower)) > 2:
+				continue
+			if levenshtein_distance(token_lower, word) <= 2:
+				fallback.append(word)
+			if len(fallback) >= limit:
+				break
+		return fallback
+
 
 
 @dataclass
@@ -613,10 +676,18 @@ class TextProcessingSystem:
 
 	def process(self, text: str) -> Dict[str, object]:
 		tokens = tokenize(text)
+		# Backend guardrails: avoid pathological latency on long multi-sentence inputs.
+		MAX_TOKENS_ANALYZE = 1000
+		if len(tokens) > MAX_TOKENS_ANALYZE:
+			tokens = tokens[:MAX_TOKENS_ANALYZE]
 		errors = self.error_detection.detect(tokens)
 
 		suggestions = {}
-		for error in errors:
+		# Avoid expensive suggestion ranking for too many errors on large inputs.
+		MAX_ERRORS_SUGGEST = 60
+		for i, error in enumerate(errors):
+			if i >= MAX_ERRORS_SUGGEST:
+				break
 			suggestions[error.token] = self.user_correction.suggest(
 				error.token,
 				error.candidates,
@@ -626,6 +697,7 @@ class TextProcessingSystem:
 
 		return {
 			"input_text": text,
+
 			"normalized_text": normalize_spaces(text),
 			"tokens": tokens,
 			"words": tokens,
@@ -665,13 +737,41 @@ def serialize_analysis(result: Dict[str, object]) -> Dict[str, object]:
 	}
 
 
-SYSTEM = build_default_system()
+
+# System initialization is intentionally lazy.
+# The word-list downloads/build can be slow or fail when network access is restricted.
+# Initializing at import-time can prevent the server from starting.
+import threading
+
+SYSTEM: TextProcessingSystem | None = None
+SYSTEM_INIT_LOCK = threading.Lock()
+SYSTEM_INIT_ERROR: str | None = None
+
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "templates" / "index.html"
 STATIC_DIR = BASE_DIR / "static"
 
 
+def get_system() -> TextProcessingSystem:
+	global SYSTEM, SYSTEM_INIT_ERROR
+	if SYSTEM is not None:
+		return SYSTEM
+
+	with SYSTEM_INIT_LOCK:
+		if SYSTEM is not None:
+			return SYSTEM
+
+		SYSTEM_INIT_ERROR = None
+		try:
+			SYSTEM = build_default_system()
+			return SYSTEM
+		except Exception as e:
+			SYSTEM_INIT_ERROR = f"Initialization failed: {e}"
+			raise
+
+
 class RequestHandler(BaseHTTPRequestHandler):
+
 	def do_GET(self) -> None:
 		if self.path in {"/", "/index.html"}:
 			self._send_text(TEMPLATE_PATH.read_text(encoding="utf-8"), content_type="text/html; charset=utf-8")
@@ -704,11 +804,26 @@ class RequestHandler(BaseHTTPRequestHandler):
 		if not isinstance(text, str):
 			text = str(text)
 
-		analysis = serialize_analysis(SYSTEM.process(text))
-		analysis["word_count"] = len(analysis["tokens"])
-		analysis["character_count"] = len(text)
-		analysis["ok"] = True
-		self._send_json(analysis)
+		try:
+			system = get_system()
+			analysis = serialize_analysis(system.process(text))
+			analysis["word_count"] = len(analysis["tokens"])
+			analysis["character_count"] = len(text)
+			analysis["ok"] = True
+			self._send_json(analysis)
+		except Exception as e:
+			self.send_response(HTTPStatus.INTERNAL_SERVER_ERROR)
+			payload = {
+				"ok": False,
+				"error": "Backend initialization failed",
+				"details": str(e),
+			}
+			encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+			self.send_header("Content-Type", "application/json; charset=utf-8")
+			self.send_header("Content-Length", str(len(encoded)))
+			self.end_headers()
+			self.wfile.write(encoded)
+
 
 	def _send_text(self, body: str, *, content_type: str) -> None:
 		encoded = body.encode("utf-8")

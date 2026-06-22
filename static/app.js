@@ -27,10 +27,14 @@ function showToast(message) {
   }, 1800);
 }
 
+// Keep word counting consistent with backend tokenizer: WORD_RE in project.py
+// Back-end: [A-Za-z0-9']+(?:-[A-Za-z0-9']+)*
 function countWords(text) {
-  const trimmed = text.trim();
-  return trimmed === "" ? 0 : trimmed.split(/\s+/).filter(Boolean).length;
+  const re = /[A-Za-z0-9']+(?:-[A-Za-z0-9']+)*/g;
+  const matches = text.match(re);
+  return matches ? matches.length : 0;
 }
+
 
 function findAllOccurrences(haystack, needle) {
   const results = [];
@@ -47,30 +51,6 @@ function findAllOccurrences(haystack, needle) {
   }
   return results;
 }
-
-function underlineErrorsInTextarea(errors, fullText) {
-  // Textarea cannot render rich markup, so we can only (optionally) switch to an overlay/highlight approach.
-  // For now, we underline the detected tokens in the SUGGESTIONS panel (already displayed), and we also try
-  // to show the first detected token via selection as a minimal “underline-like” feedback.
-  if (!Array.isArray(errors) || errors.length === 0) return;
-  const textarea = inputText;
-  if (!textarea) return;
-
-  const token = (errors[0] && errors[0].token) || "";
-  if (!token) return;
-
-  const haystack = fullText;
-  // Use best-effort word match (case-insensitive) to select the first occurrence.
-  const occurrences = findAllOccurrences(haystack, token);
-  if (!occurrences.length) return;
-
-  const { start, end } = occurrences[0];
-  textarea.focus();
-  textarea.setSelectionRange(start, end);
-}
-
-
-
 
 function renderSuggestions(errors) {
   const suggestionsListEl = document.getElementById("suggestions-list");
@@ -166,9 +146,7 @@ async function checkText(options = {}) {
     suggCount.textContent = String(data.error_count || 0);
     lastCheckedText = text;
 
-    // Underline/mark detected tokens inside the textarea.
-    // Since textarea can’t render per-word HTML styling, we select the first detected token to make it visible.
-    underlineErrorsInTextarea(data.errors || [], text);
+
 
     if (!silent && source === "manual") {
       showToast(data.error_count ? "Errors detected." : "No errors detected.");
@@ -187,11 +165,6 @@ async function checkText(options = {}) {
     }
   }
 }
-
-// Real-time checking removed. Suggestions update only when clicking Check Text.
-inputText.addEventListener("input", function () {
-  updateCounters();
-});
 
 deleteBtn.addEventListener("click", function () {
   inputText.value = "";
@@ -228,3 +201,9 @@ if (hasCheckButton) {
 suggestionsList.style.display = "none";
 emptyState.style.display = "block";
 updateCounters();
+
+// Live update counters while typing (fix “character/word count not working”).
+inputText.addEventListener("input", () => {
+  updateCounters();
+});
+

@@ -215,12 +215,7 @@ body {
   -webkit-text-decoration: none;
 }
 
-/* Underline tokens highlighted by the app */
-.mark-error {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
-}
+
 
 .editor::placeholder {
   color: var(--muted-2);

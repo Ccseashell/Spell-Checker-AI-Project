@@ -1,5 +1,11 @@
-- [ ] Add missing Check button (#check-btn) to templates/index.html
-- [ ] Verify layout with existing CSS (copy/delete placement, mobile responsiveness)
-- [ ] (If needed) Minor CSS tweaks to keep UI consistent
-- [ ] Manual test: type text, click Check Text, ensure /api/check responds and suggestions render
+# TODO
+
+- [ ] Add backend request caps (max tokens analyzed + max errors ranked) to prevent slowdown on long texts.
+- [x] Optimize candidate ranking in `ErrorDetectionModule._rank_candidates` and suggestion ranking in `UserCorrectionModule`:
+  - [x] Avoid repeated expensive computations via per-request caching (phonetic codes, levenshtein prerequisites).
+  - [x] Add cheap pre-filters before running `SequenceMatcher`.
+  - [x] Reduce number of candidates that reach expensive similarity scoring.
+- [x] Add a couple of light guards (length-based candidate limits) to prevent pathological cases.
+- [ ] Verify server still runs and returns JSON for empty/short inputs.
+
 
